@@ -84,7 +84,8 @@ class LochaViewModel(
                     garmentType = GarmentType.TEE, // Default placeholder
                     rating = 5.0f,
                     reviewCount = 0,
-                    isNewDrop = fp.product.isNewDrop
+                    isNewRelease = fp.product.isNewDrop,
+                    isBestSeller = fp.product.isFeatured
                 )
             }
         } else {
