@@ -13,7 +13,10 @@ enum class SortOption {
     POPULARITY, PRICE_LOW_TO_HIGH, PRICE_HIGH_TO_LOW
 }
 
-class LochaViewModel(private val repository: LochaRepository) : ViewModel() {
+class LochaViewModel(
+    private val repository: LochaRepository,
+    private val supabaseRepository: SupabaseRepository = SupabaseRepository()
+) : ViewModel() {
 
     // --- SEARCH / CATEGORY STATES ---
     private val _selectedCategory = MutableStateFlow("All")
@@ -39,11 +42,56 @@ class LochaViewModel(private val repository: LochaRepository) : ViewModel() {
     val pastOrders: StateFlow<List<DbPastOrder>> = repository.pastOrders
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    private val _isLoading = MutableStateFlow(true)
+    val isLoading = _isLoading.asStateFlow()
+
+    private val _remoteProducts = MutableStateFlow<List<FullProduct>>(emptyList())
+
+    init {
+        fetchSupabaseProducts()
+    }
+
+    private fun fetchSupabaseProducts() {
+        viewModelScope.launch {
+            try {
+                _isLoading.value = true
+                val products = supabaseRepository.fetchProducts()
+                _remoteProducts.value = products
+            } catch (e: Exception) {
+                e.printStackTrace()
+                // Fallback to local catalog if network fails
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
+
     // --- DYNAMIC CATALOG FLOWS ---
     val filteredProducts: StateFlow<List<Product>> = combine(
-        _selectedCategory, _searchQuery, _sortOption
-    ) { category, query, sort ->
-        var list = ProductCatalog.products
+        _remoteProducts, _selectedCategory, _searchQuery, _sortOption
+    ) { remote, category, query, sort ->
+        // Map Supabase FullProduct to legacy UI Product model
+        val mappedList = if (remote.isNotEmpty()) {
+            remote.map { fp ->
+                Product(
+                    id = fp.product.id,
+                    name = fp.product.name,
+                    category = fp.category?.name ?: "All",
+                    price = fp.product.basePrice,
+                    description = fp.product.description ?: "",
+                    availableColors = ProductCatalog.products.firstOrNull()?.availableColors ?: emptyList(),
+                    defaultColor = ProductCatalog.products.firstOrNull()?.defaultColor ?: ProductCatalog.COLORS_OBSIDIAN,
+                    garmentType = GarmentType.TEE, // Default placeholder
+                    rating = 5.0f,
+                    reviewCount = 0,
+                    isNewDrop = fp.product.isNewDrop
+                )
+            }
+        } else {
+            ProductCatalog.products
+        }
+
+        var list = mappedList
 
         // Category Filter
         if (category != "All") {
@@ -64,7 +112,7 @@ class LochaViewModel(private val repository: LochaRepository) : ViewModel() {
             SortOption.PRICE_LOW_TO_HIGH -> list.sortedBy { it.price }
             SortOption.PRICE_HIGH_TO_LOW -> list.sortedByDescending { it.price }
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), ProductCatalog.products)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // --- CART CALCULATIONS ---
     val subtotal: StateFlow<Double> = cartItems.map { items ->
