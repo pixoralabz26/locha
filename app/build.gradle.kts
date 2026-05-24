@@ -104,7 +104,7 @@ dependencies {
   // Supabase
   implementation(platform(libs.supabase.bom))
   implementation(libs.supabase.postgrest)
-  implementation(libs.supabase.gotrue)
+  implementation(libs.supabase.auth)
   implementation(libs.ktor.client.android)
   implementation(libs.kotlinx.serialization.json)
   testImplementation(libs.androidx.compose.ui.test.junit4)
